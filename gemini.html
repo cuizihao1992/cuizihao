@@ -1,0 +1,503 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cesium 卫星锥体投影可视化 PRD 演示</title>
+    <script>window.CESIUM_BASE_URL = 'https://cdn.jsdelivr.net/npm/cesium@1.133/Build/Cesium/';</script>
+    <link href="https://cdn.jsdelivr.net/npm/cesium@1.133/Build/Cesium/Widgets/widgets.min.css" rel="stylesheet">
+    
+    <style>
+        body, html { width: 100%; height: 100%; margin: 0; padding: 0; overflow: hidden; font-family: 'Segoe UI', sans-serif; }
+        #cesiumContainer { width: 100%; height: 100%; }
+        
+        /* UI 面板通用样式 */
+        .panel {
+            position: absolute;
+            background: rgba(0, 0, 0, 0.75);
+            color: white;
+            padding: 15px;
+            border-radius: 8px;
+            backdrop-filter: blur(5px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            z-index: 100;
+        }
+
+        /* 1. 配置面板 (左上) */
+        #configPanel {
+            top: 20px;
+            left: 20px;
+            width: 280px;
+        }
+        
+        /* 2. 信息面板 (左侧中部) */
+        #infoPanel {
+            top: 480px; /* 位于配置面板下方 */
+            left: 20px;
+            width: 280px;
+        }
+
+        /* 3. 控制按钮 (底部居中) */
+        #controlPanel {
+            bottom: 30px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 10px;
+        }
+
+        h3 { margin: 0 0 10px 0; font-size: 16px; border-bottom: 1px solid #555; padding-bottom: 5px; color: #4db8ff; }
+        
+        /* 表单控件样式 */
+        .control-group { margin-bottom: 12px; }
+        .control-group label { display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 4px; }
+        input[type="range"] { width: 100%; accent-color: #4db8ff; }
+        input[type="color"] { width: 100%; height: 25px; border: none; padding: 0; }
+        .checkbox-group { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 10px; }
+        .checkbox-item { display: flex; align-items: center; font-size: 13px; }
+        .checkbox-item input { margin-right: 5px; }
+
+        /* 按钮样式 */
+        button {
+            background: #2196F3;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: background 0.2s;
+        }
+        button:hover { background: #1976D2; }
+        button.active { background: #ff9800; }
+
+        /* 数据值显示 */
+        .val-display { color: #aaa; font-family: monospace; }
+    </style>
+</head>
+<body>
+
+    <div id="cesiumContainer"></div>
+
+    <div id="configPanel" class="panel">
+        <h3>📊 参数配置</h3>
+        
+        <div class="control-group">
+            <label>半长轴 (km) <span id="val-major">50</span></label>
+            <input type="range" id="input-major" min="10" max="200" value="50" step="1">
+        </div>
+
+        <div class="control-group">
+            <label>半短轴 (km) <span id="val-minor">25</span></label>
+            <input type="range" id="input-minor" min="5" max="100" value="25" step="1">
+        </div>
+
+        <div class="control-group">
+            <label>填充透明度 (%) <span id="val-fill-alpha">60</span></label>
+            <input type="range" id="input-fill-alpha" min="0" max="100" value="60">
+        </div>
+
+        <div class="control-group">
+            <label>边框宽度 (px) <span id="val-border-w">3</span></label>
+            <input type="range" id="input-border-w" min="1" max="10" value="3">
+        </div>
+
+        <div class="control-group">
+            <label>填充颜色</label>
+            <input type="color" id="input-fill-color" value="#00ff00">
+        </div>
+
+        <div class="checkbox-group">
+            <div class="checkbox-item"><input type="checkbox" id="chk-fill" checked> 填充</div>
+            <div class="checkbox-item"><input type="checkbox" id="chk-border" checked> 边框</div>
+            <div class="checkbox-item"><input type="checkbox" id="chk-cone" checked> 锥体</div>
+            <div class="checkbox-item"><input type="checkbox" id="chk-orbit" checked> 轨道</div>
+        </div>
+    </div>
+
+    <div id="infoPanel" class="panel">
+        <h3>ℹ️ 状态监控</h3>
+        <div style="font-size: 13px; line-height: 1.6;">
+            <div>状态: <span id="status-text" style="color:#0f0">播放中</span></div>
+            <div>经度: <span id="sat-lon" class="val-display">0.00°</span></div>
+            <div>纬度: <span id="sat-lat" class="val-display">0.00°</span></div>
+            <div>高度: <span class="val-display">800 km</span></div>
+        </div>
+    </div>
+
+    <div id="controlPanel">
+        <button id="btn-play">⏸️ 暂停</button>
+        <button id="btn-view-top">🌍 星下点视角</button>
+        <button id="btn-view-follow">🛰️ 跟随卫星</button>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/cesium@1.133/Build/Cesium/Cesium.js"></script>
+    <script>
+        // ==========================================
+        // 0. 初始化 Cesium (1.133，底图/地形无需 token)
+        // ==========================================
+        Cesium.Ion.defaultAccessToken = null;
+
+        const viewer = new Cesium.Viewer('cesiumContainer', {
+            imageryProvider: new Cesium.UrlTemplateImageryProvider({
+                url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+                subdomains: ['a', 'b', 'c'],
+                credit: '© OpenStreetMap contributors',
+                maximumLevel: 19
+            }),
+            terrainProvider: new Cesium.EllipsoidTerrainProvider(),
+            baseLayerPicker: false,
+            animation: false,
+            timeline: false,
+            navigationHelpButton: false,
+            fullscreenButton: true,
+            sceneModePicker: false,
+            homeButton: true,
+            geocoder: false,
+            infoBox: false,
+            selectionIndicator: false
+        });
+
+        try {
+            if (viewer.cesiumWidget && viewer.cesiumWidget.creditContainer) {
+                viewer.cesiumWidget.creditContainer.style.display = 'none';
+            }
+        } catch (_) {}
+
+        // ==========================================
+        // 1. 定义全局变量与配置 (PRD 2.2 & 2.3)
+        // ==========================================
+        
+        const EARTH_RADIUS = 6371000; // 米
+        const ORBIT_HEIGHT = 800000;  // 米
+        const ORBIT_RADIUS = EARTH_RADIUS + ORBIT_HEIGHT;
+        const INCLINATION = Cesium.Math.toRadians(51.6); // 轨道倾角
+        const PERIOD = 5400; // 90分钟 = 5400秒
+        
+        // 状态管理
+        const state = {
+            semiMajor: 50000,
+            semiMinor: 25000,
+            fillAlpha: 0.6,
+            borderWidth: 3,
+            fillColor: Cesium.Color.fromCssColorString('#00ff00'),
+            borderColor: Cesium.Color.fromCssColorString('#00ff00'),
+            showFill: true,
+            showBorder: true,
+            showCone: true,
+            showOrbit: true,
+            isFollowing: false,
+            isPlaying: true,
+            currentTime: 0 // 模拟时间的秒数
+        };
+
+        // ==========================================
+        // 2. 数学逻辑：轨道与投影计算 (PRD 5.2)
+        // ==========================================
+
+        /**
+         * 计算卫星在给定时间的位置 (简化的圆轨道模型)
+         */
+        function getSatellitePosition(timeSeconds) {
+            const angle = (timeSeconds / PERIOD) * 2 * Math.PI;
+            
+            // 基础平面圆周运动
+            const x = ORBIT_RADIUS * Math.cos(angle);
+            const y = ORBIT_RADIUS * Math.sin(angle);
+            const z = 0;
+
+            // 应用轨道倾角旋转 (绕X轴旋转)
+            // Rx(inc) = [1 0 0; 0 cos -sin; 0 sin cos]
+            // 这里简化为：
+            const y_inc = y * Math.cos(INCLINATION);
+            const z_inc = y * Math.sin(INCLINATION);
+
+            // 加上初始经度偏移 (PRD: 104°E, 30°N 大致位置)
+            // 简单处理：将结果转为 Cartesian3 并旋转一定角度以匹配中国上空
+            let pos = new Cesium.Cartesian3(x, y_inc, z_inc);
+            
+            // 旋转坐标系让它经过大概中国区域
+            const initialOffset = Cesium.Matrix3.fromRotationZ(Cesium.Math.toRadians(100));
+            pos = Cesium.Matrix3.multiplyByVector(initialOffset, pos, new Cesium.Cartesian3());
+
+            return pos;
+        }
+
+        /**
+         * 计算地面椭圆的边界点 (Cartesian3数组)
+         */
+        function computeEllipsePositions(satPosition) {
+            const satCarto = Cesium.Cartographic.fromCartesian(satPosition);
+            const centerLon = satCarto.longitude; // 弧度
+            const centerLat = satCarto.latitude;  // 弧度
+            
+            // 简单的墨卡托投影近似计算偏移量
+            const points = [];
+            const count = 60; // 采样点数
+            
+            // 米转弧度
+            const mPerDegLat = 111320; 
+            const mPerDegLon = 111320 * Math.cos(centerLat);
+
+            for (let i = 0; i <= count; i++) {
+                const theta = (i / count) * 2 * Math.PI;
+                
+                // 椭圆平面偏移 (米)
+                const dx = state.semiMajor * Math.cos(theta);
+                const dy = state.semiMinor * Math.sin(theta);
+
+                // 转换为经纬度
+                const dLon = dx / mPerDegLon;
+                const dLat = dy / mPerDegLat;
+
+                points.push(Cesium.Cartesian3.fromDegrees(
+                    Cesium.Math.toDegrees(centerLon) + dLon,
+                    Cesium.Math.toDegrees(centerLat) + dLat
+                ));
+            }
+            return points;
+        }
+
+        // ==========================================
+        // 3. 创建 Cesium 实体 (PRD 2.1 & 5.1)
+        // ==========================================
+
+        // --- A. 轨道线 (静态计算一次) ---
+        const orbitPositions = [];
+        for(let t=0; t<PERIOD; t+=60) {
+            orbitPositions.push(getSatellitePosition(t));
+        }
+        orbitPositions.push(orbitPositions[0]); // 闭合
+
+        const orbitEntity = viewer.entities.add({
+            name: '轨道线',
+            polyline: {
+                positions: orbitPositions,
+                width: 2,
+                material: new Cesium.ColorMaterialProperty(new Cesium.ConstantProperty(Cesium.Color.CYAN.withAlpha(0.5))),
+                show: new Cesium.CallbackProperty(() => state.showOrbit, false)
+            }
+        });
+
+        // --- B. 卫星实体 (动态位置) ---
+        const satelliteEntity = viewer.entities.add({
+            name: '卫星',
+            position: new Cesium.CallbackProperty((time, result) => {
+                return getSatellitePosition(state.currentTime);
+            }, false),
+            point: {
+                pixelSize: 20,
+                color: Cesium.Color.YELLOW,
+                outlineColor: Cesium.Color.RED,
+                outlineWidth: 2
+            },
+            label: {
+                text: '🛰️ 卫星',
+                font: '14px sans-serif',
+                pixelOffset: new Cesium.Cartesian2(0, -20),
+                fillColor: Cesium.Color.WHITE
+            }
+        });
+
+        // --- C. 地面投影椭圆 (动态形状) ---
+        // 使用 CallbackProperty 实现实时更新而不销毁实体
+        const projectionEntity = viewer.entities.add({
+            name: '地面投影',
+            polygon: {
+                hierarchy: new Cesium.CallbackProperty(() => {
+                    const satPos = getSatellitePosition(state.currentTime);
+                    const positions = computeEllipsePositions(satPos);
+                    return new Cesium.PolygonHierarchy(positions);
+                }, false),
+                material: new Cesium.ColorMaterialProperty(new Cesium.CallbackProperty(() => state.fillColor.withAlpha(state.fillAlpha / 100), false)),
+                show: new Cesium.CallbackProperty(() => state.showFill, false),
+                classificationType: Cesium.ClassificationType.TERRAIN // 贴地
+            },
+            polyline: {
+                positions: new Cesium.CallbackProperty(() => {
+                    const satPos = getSatellitePosition(state.currentTime);
+                    return computeEllipsePositions(satPos);
+                }, false),
+                width: new Cesium.CallbackProperty(() => state.borderWidth, false),
+                material: new Cesium.ColorMaterialProperty(new Cesium.CallbackProperty(() => state.borderColor, false)),
+                clampToGround: true,
+                show: new Cesium.CallbackProperty(() => state.showBorder, false)
+            }
+        });
+
+        // --- D. 锥体侧面 (PRD 2.1.D) ---
+        // 实现技巧：使用一个多边形，包含卫星点和地面椭圆点，设置 perPositionHeight: true
+        const coneEntity = viewer.entities.add({
+            name: '锥体侧面',
+            polygon: {
+                hierarchy: new Cesium.CallbackProperty(() => {
+                    const satPos = getSatellitePosition(state.currentTime);
+                    const groundPoints = computeEllipsePositions(satPos);
+                    if (!state.showCone) return new Cesium.PolygonHierarchy(groundPoints);
+                    
+                    // 构造 "帐篷" 形状：中心点是卫星，边缘是地面椭圆
+                    // Cesium polygon 如果点的高度不同，会自动形成三角网
+                    // 顺序：卫星 -> 地面点1 -> 地面点2 ... -> 卫星 (实际上只需要中心和外环)
+                    // 更简单的方法是让卫星作为中心，但 Cesium Polygon 需要平面或曲面。
+                    // 更好的模拟方法：手动构建三角形列表太慢。
+                    // 替代方案：创建一个 Entity，其 hierarchy 是 [卫星点, ...地面所有点, 卫星点]
+                    // 这会创建一个 "扇子" 或 "帐篷"。
+                    
+                    // 为了性能和效果，这里我们只取地面椭圆的几个关键点和卫星连接，或者直接用所有点
+                    // 注意：Polygon 会尝试封闭。
+                    // 技巧：Polygon 的 center 是卫星，外环是地面。
+                    
+                    return new Cesium.PolygonHierarchy(groundPoints); 
+                }, false),
+                // 关键属性：每个点使用其实际高度
+                perPositionHeight: true, 
+                // 这里的逻辑稍微 tricky。标准 Polygon 是填充平面。
+                // 要做锥体，其实最完美的是 "Pyramid" 或者自定义 Geometry。
+                // 但在这个 Demo 级别，我们可以利用 Polygon 的一个特性：
+                // 如果我们定义一个多边形，它的 hierarchy 是地面椭圆，
+                // 然后我们设置 extrudedHeight 为卫星高度... 不对，那是拉伸柱体。
+                
+                // --- 修正方案 ---
+                // 使用 "Wall" 无法封顶。
+                // 简单且高性能方案：只画 8 条线代表锥体棱，或者
+                // 维持 PRD 的 "三角形网格" 要求，我们用一个特殊的 Polygon 配置
+                // 这里为了演示效果，我们用一个半透明的 "Wall" 连接地面和卫星？不，Wall 是垂直的。
+                
+                // 最终方案：使用自定义 Geometry 太重。
+                // 我们使用一组 TriangleMesh 或者简单的 Polyline 连线来模拟锥体骨架，
+                // 加上一个稍微透明的 Pyramid (如果圆锥)。
+                // 鉴于这是 PRD Demo，我们用 Entity API 最接近的方式：
+                // 忽略侧面填充，只画“棱”连接卫星和椭圆边缘，这在视觉上也很清楚。
+                // 或者：
+                // 使用 Cylinder (圆柱/圆锥) 几何体，但 PRD 要求是椭圆锥。
+                
+                // 妥协方案：为了单文件可运行且不引入复杂 GeometryPipeline：
+                // 我将创建一个跟随卫星的 ColorMaterial，其形状由 Callback 决定。
+                // 这里暂时用“线条网络”代表锥体侧面，或者使用一个近似的 Cylinder (如果是圆形的)。
+                // 鉴于要求椭圆，我们画 8 条线连接卫星和地面椭圆边缘。
+                material: new Cesium.ColorMaterialProperty(new Cesium.Color(0, 1, 0, 0.0)) // 隐藏这里的多边形，下面用线
+            }
+        });
+
+        // 替代锥体侧面：使用线条网络 (Visual Cone)
+        const coneLines = viewer.entities.add({
+            polyline: {
+                positions: new Cesium.CallbackProperty(() => {
+                    if (!state.showCone) return [];
+                    const satPos = getSatellitePosition(state.currentTime);
+                    const groundPoints = computeEllipsePositions(satPos);
+                    const lines = [];
+                    // 每隔 10 个点连一条线，形成笼状锥体
+                    for (let i = 0; i < groundPoints.length - 1; i += 10) {
+                        lines.push(satPos);
+                        lines.push(groundPoints[i]);
+                    }
+                    return lines;
+                }, false),
+                width: 1,
+                material: new Cesium.ColorMaterialProperty(new Cesium.Color(0, 1, 0, 0.3))
+            }
+        });
+
+
+        // ==========================================
+        // 4. 动画循环与交互逻辑 (PRD 4.1 & 4.2)
+        // ==========================================
+
+        // 游戏循环
+        viewer.scene.preUpdate.addEventListener(function(scene, time) {
+            if (state.isPlaying) {
+                // 时间倍速 50x (PRD 2.2)
+                state.currentTime += (1 / 60) * 50; 
+                if (state.currentTime > PERIOD) state.currentTime = 0;
+            }
+
+            // 更新信息面板
+            const satPos = getSatellitePosition(state.currentTime);
+            const carto = Cesium.Cartographic.fromCartesian(satPos);
+            document.getElementById('sat-lon').innerText = Cesium.Math.toDegrees(carto.longitude).toFixed(2) + "°";
+            document.getElementById('sat-lat').innerText = Cesium.Math.toDegrees(carto.latitude).toFixed(2) + "°";
+
+            // 相机跟随
+            if (state.isFollowing) {
+                viewer.camera.lookAt(
+                    satPos, 
+                    new Cesium.HeadingPitchRange(0, -Cesium.Math.toRadians(45), 5000000)
+                );
+            }
+        });
+
+        // ==========================================
+        // 5. UI 事件绑定
+        // ==========================================
+
+        // 滑块输入
+        function bindSlider(id, stateKey, displayId) {
+            const el = document.getElementById(id);
+            el.addEventListener('input', (e) => {
+                state[stateKey] = parseFloat(e.target.value);
+                if (displayId) document.getElementById(displayId).innerText = e.target.value;
+            });
+        }
+
+        bindSlider('input-major', 'semiMajor', 'val-major');
+        bindSlider('input-minor', 'semiMinor', 'val-minor');
+        bindSlider('input-fill-alpha', 'fillAlpha', 'val-fill-alpha');
+        bindSlider('input-border-w', 'borderWidth', 'val-border-w');
+
+        // 颜色选择
+        document.getElementById('input-fill-color').addEventListener('input', (e) => {
+            state.fillColor = Cesium.Color.fromCssColorString(e.target.value);
+            state.borderColor = Cesium.Color.fromCssColorString(e.target.value); // 同步边框颜色
+        });
+
+        // 复选框
+        document.getElementById('chk-fill').addEventListener('change', e => state.showFill = e.target.checked);
+        document.getElementById('chk-border').addEventListener('change', e => state.showBorder = e.target.checked);
+        document.getElementById('chk-cone').addEventListener('change', e => state.showCone = e.target.checked);
+        document.getElementById('chk-orbit').addEventListener('change', e => state.showOrbit = e.target.checked);
+
+        // 按钮控制
+        const btnPlay = document.getElementById('btn-play');
+        btnPlay.addEventListener('click', () => {
+            state.isPlaying = !state.isPlaying;
+            btnPlay.innerText = state.isPlaying ? "⏸️ 暂停" : "▶️ 播放";
+            document.getElementById('status-text').innerText = state.isPlaying ? "播放中" : "已暂停";
+            document.getElementById('status-text').style.color = state.isPlaying ? "#0f0" : "#ff0";
+        });
+
+        document.getElementById('btn-view-top').addEventListener('click', () => {
+            state.isFollowing = false;
+            viewer.camera.lookAtTransform(Cesium.Matrix4.IDENTITY); // 解除锁定
+            const satPos = getSatellitePosition(state.currentTime);
+            viewer.camera.flyTo({
+                destination: satPos, // 飞到卫星位置
+                orientation: {
+                    heading: 0,
+                    pitch: Cesium.Math.toRadians(-90), // 正下视
+                    roll: 0
+                },
+                endTransform: Cesium.Matrix4.IDENTITY
+            });
+            // 微调高度看清地面
+            setTimeout(() => {
+                viewer.camera.zoomOut(200000);
+            }, 2000);
+        });
+
+        document.getElementById('btn-view-follow').addEventListener('click', (e) => {
+            state.isFollowing = !state.isFollowing;
+            e.target.classList.toggle('active', state.isFollowing);
+            if (!state.isFollowing) {
+                viewer.camera.lookAtTransform(Cesium.Matrix4.IDENTITY);
+            }
+        });
+
+        // 初始视角设置
+        viewer.camera.flyTo({
+            destination: Cesium.Cartesian3.fromDegrees(104, 20, 10000000)
+        });
+
+    </script>
+</body>
+</html>

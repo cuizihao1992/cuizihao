@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Cesium Earth with Satellite</title>
-    <link href="https://cesium.com/downloads/cesiumjs/releases/1.114/Build/Cesium/Widgets/widgets.css" rel="stylesheet">
+    <link href="https://cesium.com/downloads/cesiumjs/releases/1.133/Build/Cesium/Widgets/widgets.css" rel="stylesheet">
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         html, body, #cesiumContainer { width: 100%; height: 100%; overflow: hidden; }
@@ -12,76 +12,147 @@
         .info { position: absolute; top: 10px; left: 10px; background: rgba(0, 0, 0, 0.7); color: #fff; padding: 15px; border-radius: 8px; font-family: Arial; font-size: 14px; z-index: 1000; max-width: 320px; }
         .controls { position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%); background: rgba(0, 0, 0, 0.7); padding: 10px 20px; border-radius: 8px; z-index: 1000; }
         .controls button { padding: 8px 16px; margin: 0 5px; border: none; border-radius: 4px; background: #0066cc; color: white; cursor: pointer; font-size: 14px; }
-        .map-selector { position: absolute; bottom: 80px; right: 10px; background: rgba(0, 0, 0, 0.7); padding: 10px; border-radius: 8px; z-index: 2000; }
-        .map-selector select { padding: 8px; font-size: 14px; border-radius: 4px; border: none; background: #fff; cursor: pointer; }
+        .config-panel { position: absolute; top: 10px; left: 10px; background: rgba(0, 0, 0, 0.85); color: #fff; padding: 15px; border-radius: 8px; font-family: Arial, sans-serif; font-size: 13px; z-index: 2000; width: 280px; max-height: 80vh; overflow-y: auto; }
+        .config-panel h3 { margin: 0 0 15px 0; font-size: 15px; border-bottom: 1px solid #555; padding-bottom: 10px; }
+        .config-group { margin-bottom: 15px; }
+        .config-group label { display: block; margin-bottom: 5px; color: #aaa; }
+        .config-group input[type="range"] { width: 100%; margin-bottom: 3px; }
+        .config-group input[type="color"] { width: 50px; height: 28px; border: none; cursor: pointer; }
+        .config-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+        .config-value { display: inline-block; color: #0f0; margin-left: 10px; font-weight: bold; }
+        .config-checkbox { display: flex; align-items: center; gap: 8px; }
     </style>
 </head>
 <body>
     <div id="loading" class="loading">正在加载地球...</div>
+    
+    <div class="config-panel" id="configPanel">
+        <h3>📊 投影参数配置</h3>
+        
+        <div class="config-group">
+            <div class="config-row">
+                <label>半长轴 (km)</label>
+                <span class="config-value" id="valSemiMajor">50</span>
+            </div>
+            <input type="range" id="semiMajor" min="10" max="200" value="50">
+        </div>
+        
+        <div class="config-group">
+            <div class="config-row">
+                <label>半短轴 (km)</label>
+                <span class="config-value" id="valSemiMinor">25</span>
+            </div>
+            <input type="range" id="semiMinor" min="5" max="100" value="25">
+        </div>
+        
+        <div class="config-group">
+            <div class="config-row">
+                <label>填充颜色</label>
+                <input type="color" id="fillColor" value="#00ff00">
+            </div>
+        </div>
+        
+        <div class="config-group">
+            <div class="config-row">
+                <label>填充透明度</label>
+                <span class="config-value" id="valFillOpacity">60%</span>
+            </div>
+            <input type="range" id="fillOpacity" min="0" max="100" value="60">
+        </div>
+        
+        <div class="config-group">
+            <div class="config-row">
+                <label>边框颜色</label>
+                <input type="color" id="borderColor" value="#00ff00">
+            </div>
+        </div>
+        
+        <div class="config-group">
+            <div class="config-row">
+                <label>边框宽度</label>
+                <span class="config-value" id="valBorderWidth">3</span>
+            </div>
+            <input type="range" id="borderWidth" min="1" max="10" value="3">
+        </div>
+        
+        <div class="config-group">
+            <div class="config-row">
+                <label>边框透明度</label>
+                <span class="config-value" id="valBorderOpacity">100%</span>
+            </div>
+            <input type="range" id="borderOpacity" min="0" max="100" value="100">
+        </div>
+        
+        <div class="config-group">
+            <label class="config-checkbox">
+                <input type="checkbox" id="showFill" checked>
+                <span>显示填充面</span>
+            </label>
+        </div>
+        
+        <div class="config-group">
+            <label class="config-checkbox">
+                <input type="checkbox" id="showBorder" checked>
+                <span>显示边框</span>
+            </label>
+        </div>
+        
+        <div class="config-group">
+            <label class="config-checkbox">
+                <input type="checkbox" id="showCone" checked>
+                <span>显示锥体侧面</span>
+            </label>
+        </div>
+        
+        <div class="config-group">
+            <label class="config-checkbox">
+                <input type="checkbox" id="showOrbit" checked>
+                <span>显示轨道线</span>
+            </label>
+        </div>
+    </div>
+
     <div class="info">
         <h3>🛰️ 卫星锥体投影</h3>
         <p id="status">状态: 已暂停</p>
-        <p>底图: <span id="mapName">ESRI 卫星</span></p>
-        <p>位置: 四川盆地（有山地区）</p>
-        <p>轨道高度: ~800km | 椭圆: 100×50km</p>
+        <p>底图: <span id="mapName">Bing Maps</span></p>
+        <p>位置: 四川盆地</p>
         <p style="margin-top: 10px; color: #aaa;">操作: 左键旋转 | 右键平移 | 滚轮缩放</p>
     </div>
-    <div class="map-selector">
-        <select id="mapSelect">
-            <option value="satellite" selected>ESRI 卫星</option>
-            <option value="darkMatter">Dark Matter</option>
-            <option value="osm">OpenStreetMap</option>
-            <option value="cartoLight">CartoDB 浅色</option>
-        </select>
-    </div>
+    
     <div class="controls">
-        <button id="btnReset">🌍 全球视角</button>
+        <button id="btnReset">🌍 星下点视角</button>
         <button id="btnFollow">🛰️ 跟随卫星</button>
         <button id="btnToggle">▶️ 播放</button>
     </div>
     <div id="cesiumContainer"></div>
 
-    <script src="https://cesium.com/downloads/cesiumjs/releases/1.114/Build/Cesium/Cesium.js"></script>
-    <script>
-        // 设置token
+    <script src="https://cesium.com/downloads/cesiumjs/releases/1.133/Build/Cesium/Cesium.js"></script>
+    <script type="module">
         Cesium.Ion.defaultAccessToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiIxY2Y3NzY4OC0xMjExLTRiZjUtYTU5Ny1jYzg4ZmUzNzhhZjciLCJpZCI6MjI3NjcsInNjb3BlcyI6WyJhc3IiLCJnYyJdLCJpYXQiOjE1ODIwMTQ3MTF9.7nQHPXIiwHNXpRd_cuK_TL8P-27wUKfMt2yvsiWkpyg';
 
-        // ============ 底图配置 ============
-        const mapProviders = {
-            osm: { name: 'OpenStreetMap', provider: new Cesium.UrlTemplateImageryProvider({ url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', subdomains: ['a', 'b', 'c'] }) },
-            cartoLight: { name: 'CartoDB 浅色', provider: new Cesium.UrlTemplateImageryProvider({ url: 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png', subdomains: ['a', 'b', 'c', 'd'] }) },
-            darkMatter: { name: 'Dark Matter', provider: new Cesium.UrlTemplateImageryProvider({ url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png', subdomains: ['a', 'b', 'c', 'd'] }) },
-            satellite: { name: 'ESRI 卫星', provider: new Cesium.UrlTemplateImageryProvider({ url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}' }) }
+        // ============ 配置参数 ============
+        const config = {
+            semiMajor: 50000, semiMinor: 25000,
+            fillColor: { r: 0, g: 1, b: 0 }, fillOpacity: 0.6,  // 增加透明度确保可见
+            borderColor: { r: 0, g: 1, b: 0 }, borderWidth: 3, borderOpacity: 1.0,  // 边框不透明
+            showFill: true, showBorder: true, showCone: true, showOrbit: true
         };
 
-        // ============ 初始化 Viewer（启用地形）============
-        // 使用 Cesium Ion 的世界地形资源
-        const terrainProvider = new Cesium.CesiumTerrainProvider({
-            url: Cesium.IonResource.fromAssetId(1), // Cesium World Terrain asset ID
-            requestVertexNormals: true,
-            requestWaterMask: true
-        });
-        
+        // ============ 初始化 Viewer ============
         const viewer = new Cesium.Viewer('cesiumContainer', {
-            imageryProvider: true,
-            // terrainProvider: terrainProvider,
             baseLayerPicker: true, geocoder: true, homeButton: true,
-            sceneModePicker: true, navigationHelpButton: true, animation: true, timeline: true, fullscreenButton: true
+            sceneModePicker: true, navigationHelpButton: true, 
+            animation: true, timeline: true, fullscreenButton: true
         });
 
-        // 启用光照效果（地形立体感更强）
-        viewer.scene.globe.enableLighting = true;
-
-        function switchMap(mapKey) {
-            const mapConfig = mapProviders[mapKey];
-            if (!mapConfig) return;
-            viewer.imageryLayers.removeAll();
-            viewer.imageryLayers.addImageryProvider(mapConfig.provider);
-            document.getElementById('mapName').textContent = mapConfig.name;
-            document.getElementById('mapSelect').value = mapKey;
-        }
-        setTimeout(() => { switchMap('satellite'); document.getElementById('loading').style.display = 'none'; }, 100);
-        document.getElementById('mapSelect').addEventListener('change', (e) => switchMap(e.target.value));
+        // 设置世界地形（暂时禁用，使用平滑地球确保投影可见）
+        // try {
+        //     viewer.terrainProvider = await Cesium.createWorldTerrainAsync();
+        //     console.log('地形加载成功');
+        // } catch(e) {
+        //     console.warn('地形加载失败，使用默认地形:', e);
+        // }
 
         // ============ 卫星参数 ============
         const EARTH_RADIUS = 6371000;
@@ -89,13 +160,8 @@
         const ORBIT_RADIUS = EARTH_RADIUS + ORBIT_HEIGHT;
         const ORBIT_PERIOD = 90 * 60;
         const INCLINATION = Cesium.Math.toRadians(51.6);
-        
-        // 缩小椭圆：100km × 50km
-        const COVERAGE_SEMI_MAJOR = 50000; // 50km
-        const COVERAGE_SEMI_MINOR = 25000; // 25km
         const NUM_POINTS = 60;
         
-        // ============ 时钟设置（默认暂停）============
         const startTime = Cesium.JulianDate.now();
         const stopTime = Cesium.JulianDate.addSeconds(startTime, 86400, new Cesium.JulianDate());
         
@@ -104,7 +170,7 @@
         viewer.clock.currentTime = startTime.clone();
         viewer.clock.clockRange = Cesium.ClockRange.LOOP_STOP;
         viewer.clock.multiplier = 50;
-        viewer.clock.shouldAnimate = false; // 默认暂停
+        viewer.clock.shouldAnimate = false;
 
         // ============ 卫星位置计算 ============
         function getSatellitePosition(time) {
@@ -118,9 +184,12 @@
             return new Cesium.Cartesian3(x, y * cosInc, y * sinInc);
         }
 
-        // ============ 采样卫星轨道 ============
+        // 采样卫星轨道
         const satellitePositionProperty = new Cesium.SampledPositionProperty();
-        satellitePositionProperty.setInterpolationOptions({ interpolationDegree: 5, interpolationAlgorithm: Cesium.LagrangePolynomialApproximation });
+        satellitePositionProperty.setInterpolationOptions({ 
+            interpolationDegree: 5, 
+            interpolationAlgorithm: Cesium.LagrangePolynomialApproximation 
+        });
         for (let i = 0; i <= 200; i++) {
             const time = Cesium.JulianDate.addSeconds(startTime, (i / 200) * ORBIT_PERIOD, new Cesium.JulianDate());
             satellitePositionProperty.addSample(time, getSatellitePosition(time));
@@ -132,7 +201,10 @@
             position: satellitePositionProperty,
             availability: new Cesium.TimeIntervalCollection([new Cesium.TimeInterval({ start: startTime, stop: stopTime })]),
             point: { pixelSize: 20, color: Cesium.Color.YELLOW, outlineColor: Cesium.Color.RED, outlineWidth: 3 },
-            label: { text: '🛰️ 卫星', font: 'bold 16pt sans-serif', fillColor: Cesium.Color.WHITE, outlineColor: Cesium.Color.BLACK, outlineWidth: 3, verticalOrigin: Cesium.VerticalOrigin.BOTTOM, pixelOffset: new Cesium.Cartesian2(0, -25), showBackground: true, backgroundColor: new Cesium.Color(0, 0, 0, 0.8) }
+            label: { text: '🛰️ 卫星', font: 'bold 16pt sans-serif', fillColor: Cesium.Color.WHITE, 
+                    outlineColor: Cesium.Color.BLACK, outlineWidth: 3, verticalOrigin: Cesium.VerticalOrigin.BOTTOM, 
+                    pixelOffset: new Cesium.Cartesian2(0, -25), showBackground: true, 
+                    backgroundColor: new Cesium.Color(0, 0, 0, 0.8) }
         });
 
         // ============ 轨道线 ============
@@ -145,10 +217,13 @@
                 ORBIT_RADIUS * Math.sin(angle) * Math.sin(INCLINATION)
             ));
         }
-        viewer.entities.add({ name: '轨道线', polyline: { positions: orbitPoints, width: 2, material: new Cesium.Color(0, 1, 1, 0.8), arcType: Cesium.ArcType.NONE } });
+        const orbitEntity = viewer.entities.add({
+            name: '轨道线',
+            polyline: { positions: orbitPoints, width: 2, material: new Cesium.Color(0, 1, 1, 0.8), arcType: Cesium.ArcType.NONE }
+        });
 
-        // ============ 计算地面椭圆点的函数 ============
-        function computeGroundPoints(satPos) {
+        // ============ 计算地面椭圆点 ============
+        function computeGroundPoints(satPos, semiMajor, semiMinor) {
             if (!satPos) return [];
             const satCarto = Cesium.Cartographic.fromCartesian(satPos);
             const centerLon = Cesium.Math.toDegrees(satCarto.longitude);
@@ -158,140 +233,179 @@
             const points = [];
             for (let i = 0; i < NUM_POINTS; i++) {
                 const theta = (i / NUM_POINTS) * 2 * Math.PI;
-                const dx = COVERAGE_SEMI_MAJOR * Math.cos(theta);
-                const dy = COVERAGE_SEMI_MINOR * Math.sin(theta);
+                const dx = semiMajor * Math.cos(theta);
+                const dy = semiMinor * Math.sin(theta);
                 const deltaLon = Cesium.Math.toDegrees(dx / (EARTH_RADIUS * cosLat));
                 const deltaLat = Cesium.Math.toDegrees(dy / EARTH_RADIUS);
-                // 高度设为0，让Cesium根据地形自动计算
                 points.push(Cesium.Cartesian3.fromDegrees(centerLon + deltaLon, centerLat + deltaLat, 0));
             }
             return points;
         }
 
-        // ============ 锥体投影 ============
-        
-        // 1. 地面椭圆边界线
-        const groundBoundaryEntity = viewer.entities.add({
-            name: '地面椭圆边界',
-            polyline: {
-                positions: new Cesium.CallbackProperty(function(time) {
-                    const satPos = satellitePositionProperty.getValue(time);
-                    const points = computeGroundPoints(satPos);
-                    if (points.length === 0) return [];
-                    return [...points, points[0]];
-                }, false),
-                width: 3,
-                material: new Cesium.Color(1, 1, 0, 0.9),
-                arcType: Cesium.ArcType.GEODESIC
-            }
-        });
+        // ============ 投影实体 ============
+        let groundFillEntity, groundBorderEntity, coneEntities = [];
 
-        // 2. 地面填充面（绿色透明，贴地形显示）
-        const groundFillEntity = viewer.entities.add({
-            name: '地面投影面',
-            polygon: {
-                hierarchy: new Cesium.CallbackProperty(function(time) {
-                    const satPos = satellitePositionProperty.getValue(time);
-                    const points = computeGroundPoints(satPos);
-                    return new Cesium.PolygonHierarchy(points);
-                }, false),
-                material: new Cesium.Color(0, 1, 0, 0.35), // 绿色，35%透明度
-                outline: false,
-                // 使用 classificationType 让多边形贴地形显示
-                classificationType: Cesium.ClassificationType.TERRAIN
-            }
-        });
+        function createOrUpdateProjection() {
+            if (groundFillEntity) viewer.entities.remove(groundFillEntity);
+            if (groundBorderEntity) viewer.entities.remove(groundBorderEntity);
+            coneEntities.forEach(e => viewer.entities.remove(e));
+            coneEntities = [];
 
-        // 3. 锥体侧面填充（使用20个三角形扇区近似）
-        for (let i = 0; i < NUM_POINTS; i += 3) {
-            const next = (i + 3) % NUM_POINTS;
-            viewer.entities.add({
-                name: '锥体侧面_' + i,
-                polygon: {
-                    hierarchy: new Cesium.CallbackProperty((function(idx1, idx2) {
-                        return function(time) {
-                            const satPos = satellitePositionProperty.getValue(time);
-                            if (!satPos) return [];
-                            const points = computeGroundPoints(satPos);
-                            if (points.length === 0) return [];
-                            return new Cesium.PolygonHierarchy([satPos, points[idx1], points[idx2]]);
-                        };
-                    })(i, next), false),
-                    material: new Cesium.Color(1, 0.5, 0, 0.15),
-                    outline: false,
-                    perPositionHeight: true
+            const currentTime = viewer.clock.currentTime;
+            const satPos = satellitePositionProperty.getValue(currentTime);
+            if (!satPos) {
+                console.warn('卫星位置无效');
+                return;
+            }
+
+            const groundPoints = computeGroundPoints(satPos, config.semiMajor, config.semiMinor);
+            if (groundPoints.length === 0) {
+                console.warn('地面点计算失败');
+                return;
+            }
+            
+            console.log('创建投影，地面点数:', groundPoints.length, '显示填充:', config.showFill, '显示边框:', config.showBorder);
+
+            // 地面填充面
+            if (config.showFill) {
+                groundFillEntity = viewer.entities.add({
+                    name: '地面投影面',
+                    polygon: {
+                        hierarchy: new Cesium.PolygonHierarchy(groundPoints),
+                        material: new Cesium.Color(config.fillColor.r, config.fillColor.g, config.fillColor.b, config.fillOpacity),
+                        outline: false
+                        // 不使用 classificationType，让多边形正常显示在地球表面
+                    }
+                });
+            }
+
+            // 地面边框
+            if (config.showBorder) {
+                const borderPositions = [...groundPoints, groundPoints[0]];
+                groundBorderEntity = viewer.entities.add({
+                    name: '地面投影边框',
+                    polyline: {
+                        positions: borderPositions,
+                        width: config.borderWidth,
+                        material: new Cesium.Color(config.borderColor.r, config.borderColor.g, config.borderColor.b, config.borderOpacity),
+                        arcType: Cesium.ArcType.GEODESIC,
+                        clampToGround: true
+                    }
+                });
+            }
+
+            // 锥体侧面
+            if (config.showCone) {
+                for (let i = 0; i < NUM_POINTS; i += 3) {
+                    const next = (i + 3) % NUM_POINTS;
+                    coneEntities.push(viewer.entities.add({
+                        name: '锥体侧面_' + i,
+                        polygon: {
+                            hierarchy: new Cesium.PolygonHierarchy([satPos, groundPoints[i], groundPoints[next]]),
+                            material: new Cesium.Color(config.fillColor.r, config.fillColor.g, config.fillColor.b, config.fillOpacity * 0.5),
+                            outline: false,
+                            perPositionHeight: true
+                        }
+                    }));
                 }
-            });
+            }
         }
 
-        // ============ 设置初始位置：中国四川（有山地区）============
-        // 四川盆地附近，经度约 104°E，纬度约 30°N，周围有山
+        createOrUpdateProjection();
+        console.log('初始投影已创建');
+
+        viewer.scene.preUpdate.addEventListener(function() {
+            if (viewer.clock.shouldAnimate) {
+                createOrUpdateProjection();
+            }
+        });
+
+        // ============ 配置面板功能 ============
+        function hexToRgb(hex) {
+            const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+            return result ? {
+                r: parseInt(result[1], 16) / 255,
+                g: parseInt(result[2], 16) / 255,
+                b: parseInt(result[3], 16) / 255
+            } : { r: 0, g: 1, b: 0 };
+        }
+
+        function updateConfig() {
+            config.semiMajor = parseInt(document.getElementById('semiMajor').value) * 1000;
+            config.semiMinor = parseInt(document.getElementById('semiMinor').value) * 1000;
+            config.fillColor = hexToRgb(document.getElementById('fillColor').value);
+            config.fillOpacity = parseInt(document.getElementById('fillOpacity').value) / 100;
+            config.borderColor = hexToRgb(document.getElementById('borderColor').value);
+            config.borderWidth = parseInt(document.getElementById('borderWidth').value);
+            config.borderOpacity = parseInt(document.getElementById('borderOpacity').value) / 100;
+            config.showFill = document.getElementById('showFill').checked;
+            config.showBorder = document.getElementById('showBorder').checked;
+            config.showCone = document.getElementById('showCone').checked;
+            config.showOrbit = document.getElementById('showOrbit').checked;
+
+            document.getElementById('valSemiMajor').textContent = document.getElementById('semiMajor').value;
+            document.getElementById('valSemiMinor').textContent = document.getElementById('semiMinor').value;
+            document.getElementById('valFillOpacity').textContent = document.getElementById('fillOpacity').value + '%';
+            document.getElementById('valBorderWidth').textContent = config.borderWidth;
+            document.getElementById('valBorderOpacity').textContent = document.getElementById('borderOpacity').value + '%';
+
+            orbitEntity.show = config.showOrbit;
+            createOrUpdateProjection();
+        }
+
+        // 绑定配置面板事件
+        document.querySelectorAll('#configPanel input').forEach(input => {
+            input.addEventListener('input', updateConfig);
+            input.addEventListener('change', updateConfig);
+        });
+
+        // ============ 初始位置：四川上空 ============
         const CHINA_LON = 104.0;
         const CHINA_LAT = 30.0;
-        
-        // 计算卫星在该位置上空的初始时间
-        // 将经纬度转换为轨道角度（简化计算）
         const initialAngle = Cesium.Math.toRadians(CHINA_LON);
         const initialTime = Cesium.JulianDate.addSeconds(startTime, (initialAngle / (2 * Math.PI)) * ORBIT_PERIOD, new Cesium.JulianDate());
-        
-        // 设置时钟到该时间
         viewer.clock.currentTime = initialTime.clone();
-        
-        // ============ 初始视角：设在星下点（俯视地面投影）============
+
         const initialSatPos = satellitePositionProperty.getValue(initialTime);
         const initialCarto = Cesium.Cartographic.fromCartesian(initialSatPos);
         const initialLon = Cesium.Math.toDegrees(initialCarto.longitude);
         const initialLat = Cesium.Math.toDegrees(initialCarto.latitude);
         
-        // 相机位置：星下点正上方，高度约 150km
         viewer.camera.setView({
             destination: Cesium.Cartesian3.fromDegrees(initialLon, initialLat, 150000),
-            orientation: { 
-                heading: 0, 
-                pitch: Cesium.Math.toRadians(-90), // 正俯视
-                roll: 0 
-            }
+            orientation: { heading: 0, pitch: Cesium.Math.toRadians(-90), roll: 0 }
         });
 
         // ============ 控制函数 ============
-        let isFollowing = false;
-        let isPlaying = false; // 默认暂停
+        let isFollowing = false, isPlaying = false;
         
-        function resetView() {
+        document.getElementById('btnReset').addEventListener('click', () => {
             viewer.trackedEntity = undefined;
             isFollowing = false;
             const currentTime = viewer.clock.currentTime;
             const satPos = satellitePositionProperty.getValue(currentTime);
             const carto = Cesium.Cartographic.fromCartesian(satPos);
-            const lon = Cesium.Math.toDegrees(carto.longitude);
-            const lat = Cesium.Math.toDegrees(carto.latitude);
-            
-            // 回到星下点正上方
             viewer.camera.setView({
-                destination: Cesium.Cartesian3.fromDegrees(lon, lat, 150000),
+                destination: Cesium.Cartesian3.fromDegrees(Cesium.Math.toDegrees(carto.longitude), Cesium.Math.toDegrees(carto.latitude), 150000),
                 orientation: { heading: 0, pitch: Cesium.Math.toRadians(-90), roll: 0 }
             });
-        }
+        });
         
-        function followSatellite() {
+        document.getElementById('btnFollow').addEventListener('click', () => {
             isFollowing = !isFollowing;
             viewer.trackedEntity = isFollowing ? satellite : undefined;
             document.getElementById('status').textContent = isFollowing ? '状态: 跟随卫星' : (isPlaying ? '状态: 播放中' : '状态: 已暂停');
-        }
+        });
         
-        function toggleAnimation() {
+        document.getElementById('btnToggle').addEventListener('click', () => {
             isPlaying = !isPlaying;
             viewer.clock.shouldAnimate = isPlaying;
             document.getElementById('status').textContent = isPlaying ? '状态: 播放中' : '状态: 已暂停';
             document.getElementById('btnToggle').textContent = isPlaying ? '⏸️ 暂停' : '▶️ 播放';
-        }
+        });
 
-        document.getElementById('btnReset').addEventListener('click', resetView);
-        document.getElementById('btnFollow').addEventListener('click', followSatellite);
-        document.getElementById('btnToggle').addEventListener('click', toggleAnimation);
-
-        console.log('✅ 卫星锥体投影已启动 - 位置：四川盆地');
-        console.log('地形已启用，可看到山脉效果');
+        document.getElementById('loading').style.display = 'none';
+        console.log('✅ Cesium 1.133 卫星锥体投影已启动');
     </script>
 </body>
 </html>
